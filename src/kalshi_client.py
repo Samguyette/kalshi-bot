@@ -95,7 +95,7 @@ class KalshiClient:
                 
         return all_markets
 
-    def place_order(self, ticker: str, side: str, count: int, price: float) -> Optional[Dict[str, Any]]:
+    def place_order(self, ticker: str, side: str, count: int, price: float, dry_run: bool = False) -> Optional[Dict[str, Any]]:
         """
         Places a limit order on Kalshi.
         """
@@ -107,14 +107,6 @@ class KalshiClient:
         url = f"{self.BASE_URL}{path}"
         method = "POST"
         timestamp = str(int(time.time() * 1000))
-        
-        # Format price to dollars (Kalshi expects dollars for yes_price/no_price?) 
-        # Actually in V2 docs, for 'yes_price' it is usually in cents.
-        # WAIT: Let's check docs or assume dollars from the variable name but API usually takes cents?
-        # Re-reading gathered context: "yes_price or no_price: The price in cents if using a limit order."
-        # The tool response regarding place_order says "yes_price or no_price: The price in cents". 
-        # But let's be careful. The code currently parses dollars. 
-        # If the input `price` is in dollars (e.g. 0.50), convert to cents (50).
         
         price_cents = int(price * 100)
         
@@ -142,6 +134,13 @@ class KalshiClient:
             "Content-Type": "application/json"
         }
         
+        if dry_run:
+            print(f"\n[DRY RUN] Skipping API execution.")
+            print(f"URL: {url}")
+            print(f"Headers: {json.dumps(headers, indent=2)}")
+            print(f"Payload: {json.dumps(payload, indent=2)}\n")
+            return {"status": "dry_run", "order_id": "simulated"}
+
         try:
             print(f"Placing order: {json.dumps(payload, indent=2)}")
             response = self.session.post(url, data=body_str, headers=headers)

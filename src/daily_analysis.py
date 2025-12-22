@@ -3,6 +3,7 @@ import sys
 from datetime import datetime, timezone, timedelta
 from google import genai
 from google.genai import types
+import json
 from dotenv import load_dotenv
 from kalshi_client import KalshiClient
 import re
@@ -88,11 +89,11 @@ def generate_llm_prompt(markets):
 
 ## Objective
 Identify the SINGLE most profitable trading opportunity from the list below. 
-These markets close between 24 hours and 7 days from now (avoiding immediate volatility).
+These markets close between 24 hours and 7 days from now.
 
 ## Analysis Criteria
 1. **Spread & Vigorish**: Check the "Spread". If Yes+No > $1.02, the trade requires a significantly higher edge to be profitable. Avoid high-fee markets.
-2. **Skepticism of Long Shots**: Apply a heavy penalty to any option priced below $0.05 ($1 to $5 bets). These are often "dead money" unless you identify specific breaking news.
+2. **Skepticism of Long Shots**: Apply a heavy penalty to any option priced below $0.05 ($1 to $5 bets). Leftover active markets with low volume are often efficiently priced or "dead".
 3. **EV & Probability**: Compare implied probability (Price) vs real-world likelihood.
 4. **Liquidity**: Ensure sufficient volume/liquidity to execute.
 
@@ -101,22 +102,23 @@ These markets close between 24 hours and 7 days from now (avoiding immediate vol
 {markets_text}
 
 ## Required Output Format
-Output ONLY your single best pick in this format:
-
-### MATCH: [Ticker] [Buy YES/NO] @ [Price]
-**Reasoning:** [Concise analysis of why EV is positive, accounting for spread/fees.]
-**Confidence:** [High/Medium/Low]
+You must output a JSON object with the following schema:
+{{
+  "ticker": "MARKET-TICKER",
+  "side": "YES" or "NO",
+  "price": 0.45,
+  "confidence": "High" or "Medium" or "Low",
+  "reasoning": "Concise explanation..."
+}}
 """
     return prompt
 
-def call_google_llm(prompt):
-    """
-    Calls Google's Gemini 2.0 Flash Thinking model with the generated prompt.
-    """
-def call_google_llm(prompt):
+
+def call_google_llm(prompt, dry_run=False):
     """
     Calls Google's Gemini models with fallback logic.
     Attempts models in order: Gemini 3 -> Gemini 2.0 Flash Thinking -> Gemini 2.0 Flash
+    If dry_run=True, prioritizes faster/cheaper models.
     """
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
@@ -129,18 +131,27 @@ def call_google_llm(prompt):
     client = genai.Client(api_key=api_key)
     
     # Priority list of models to try
-    models_to_try = [
-        "gemini-3-pro-preview",       # Best (likely paid/limited)
-        "gemini-2.0-flash-exp",       # Experimental Flash (often has thinking/better reasing)
-        "gemini-2.0-flash",           # Standard Flash 2.0 (Solid)
-        "gemini-flash-latest"         # Fallback to 1.5 Flash
-    ]
+    if dry_run:
+        print("[DRY RUN] Using faster/cheaper models for testing.")
+        models_to_try = [
+            "gemini-2.0-flash",           # Standard Flash 2.0 (Fast & Cheap)
+            "gemini-flash-latest",        # Fallback to 1.5 Flash
+            "gemini-2.0-flash-exp"
+        ]
+    else:
+        models_to_try = [
+            "gemini-3-pro-preview",       # Best (likely paid/limited)
+            "gemini-2.0-flash-exp",       # Experimental Flash (often has thinking/better reasing)
+            "gemini-2.0-flash",           # Standard Flash 2.0 (Solid)
+            "gemini-flash-latest"         # Fallback to 1.5 Flash
+        ]
 
     for model_name in models_to_try:
         try:
             print(f"Sending analysis request to Google (Model: {model_name})...")
             response = client.models.generate_content(
                 model=model_name,
+                config=types.GenerateContentConfig(response_mime_type="application/json"),
                 contents=[prompt]
             )
             return response.text
@@ -162,29 +173,31 @@ def call_google_llm(prompt):
 
 def parse_llm_decision(llm_output):
     """
-    Parses the LLM output to extract the trade decision.
-    Expected format: ### MATCH: [Ticker] [Buy YES/NO] @ [Price]
-    Example: ### MATCH: BRRR-24DEC31 Buy YES @ 0.45
+    Parses the LLM output to extract the trade decision from JSON.
     """
     if not llm_output:
         return None
         
-    # Regex to capture Ticker, Side (Buy YES/NO), and Price
-    pattern = r"### MATCH:\s*([A-Za-z0-9-]+)\s+(?:\[?Buy\s+)?(YES|NO)\]?\s*@\s*[\$]?([0-9.]+)"
-    match = re.search(pattern, llm_output, re.IGNORECASE)
-    
-    if match:
-        ticker = match.group(1).strip()
-        side = match.group(2).strip().upper()
-        price = float(match.group(3))
+    try:
+        # Clean up any potential markdown code blocks like ```json ... ```
+        cleaned_output = llm_output.strip()
+        if cleaned_output.startswith("```"):
+            cleaned_output = cleaned_output.split("\n", 1)[1]
+            if cleaned_output.endswith("```"):
+                cleaned_output = cleaned_output.rsplit("\n", 1)[0]
+        
+        data = json.loads(cleaned_output)
+        
         return {
-            "ticker": ticker,
-            "side": side,
-            "price": price
+            "ticker": data.get("ticker"),
+            "side": data.get("side"),
+            "price": float(data.get("price", 0.0))
         }
-    return None
+    except Exception as e:
+        print(f"Error parsing JSON from LLM: {e}")
+        return None
 
-def execute_bet(client, decision):
+def execute_bet(client, decision, dry_run=False):
     """
     Executes the bet based on the parsed decision.
     Bet size is fixed at ~$5.00.
@@ -218,8 +231,11 @@ def execute_bet(client, decision):
     print(f"Total:  ${count * price:.2f}")
     print("="*50 + "\n")
     
+    # Determine if DRY RUN is enabled (passed from main now, but keeping for safety)
+    # dry_run arg is now passed in execute_bet call
+    
     # Place the order
-    client.place_order(ticker, side, count, price)
+    client.place_order(ticker, side, count, price, dry_run=dry_run)
 
 def main():
     load_dotenv()
@@ -253,8 +269,11 @@ def main():
     print(prompt)
     print("="*50 + "\n")
 
+    # Determine if DRY RUN is enabled
+    dry_run = os.environ.get("DRY_RUN", "false").lower() == "true"
+
     # Call Google LLM
-    analysis = call_google_llm(prompt)
+    analysis = call_google_llm(prompt, dry_run=dry_run)
     
     if analysis:
         print("\n" + "*"*20 + " GOOGLE THINKING LLM PREDICTION " + "*"*20 + "\n")
@@ -264,7 +283,7 @@ def main():
         # Parse and Bet
         decision = parse_llm_decision(analysis)
         if decision:
-            execute_bet(client, decision)
+            execute_bet(client, decision, dry_run=dry_run)
         else:
             print("Could not parse a valid trade decision from the LLM output.")
 
