@@ -1,0 +1,45 @@
+name: Daily Prediction Market Analysis
+
+on:
+  schedule:
+    # Runs at 14:00 UTC every day (6:00 AM PST / 9:00 AM EST)
+    - cron: '0 14 * * *'
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  analyze-and-bet:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+    - name: Create Private Key File
+      # We write the secret content to a file because the Python script expects a file path
+      run: |
+        echo "${{ secrets.KALSHI_PRIVATE_KEY }}" > kalshi_private_key.pem
+        chmod 600 kalshi_private_key.pem
+
+    - name: Run Daily Analysis
+      env:
+        # Map secrets to environment variables
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
+        # Point to the file we just created
+        KALSHI_PRIVATE_KEY_PATH: ./kalshi_private_key.pem
+        # Optional: Set to 'true' if you want to test without spending money
+        DRY_RUN: 'false'
+      run: |
+        python src/daily_analysis.py
