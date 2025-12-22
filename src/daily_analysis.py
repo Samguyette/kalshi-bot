@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from kalshi_client import KalshiClient
 import re
 import math
+from supabase import create_client, Client
 
 def get_analysis_window():
     """
@@ -211,7 +212,9 @@ def parse_llm_decision(llm_output):
         return {
             "ticker": data.get("ticker"),
             "side": data.get("side"),
-            "price": float(data.get("price", 0.0))
+            "price": float(data.get("price", 0.0)),
+            "reasoning": data.get("reasoning"),
+            "confidence": data.get("confidence")
         }
     except Exception as e:
         print(f"Error parsing JSON from LLM: {e}")
@@ -255,7 +258,44 @@ def execute_bet(client, decision, dry_run=False):
     # dry_run arg is now passed in execute_bet call
     
     # Place the order
-    client.place_order(ticker, side, count, price, dry_run=dry_run)
+    order_response = client.place_order(ticker, side, count, price, dry_run=dry_run)
+    
+    # Log to Supabase if order was seemingly successful (or dry run)
+    if order_response:
+        log_bet_to_supabase(decision, count, bet_amount, dry_run)
+
+def log_bet_to_supabase(decision, count, amount, dry_run=False):
+    """
+    Logs the bet details to Supabase.
+    """
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_KEY")
+    
+    if not url or not key:
+        print("Warning: SUPABASE_URL or SUPABASE_KEY not found. Skipping DB log.")
+        return
+
+    try:
+        supabase: Client = create_client(url, key)
+        
+        data = {
+            "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            "ticker": decision["ticker"],
+            "side": decision["side"],
+            "price": decision["price"],
+            "count": count,
+            "amount": amount,
+            "reasoning": decision.get("reasoning", ""),
+            "confidence": decision.get("confidence", ""),
+            "status": "dry_run" if dry_run else "open"
+        }
+        
+        print(f"Logging bet to Supabase: {data['ticker']} ({data['side']})")
+        supabase.table("bets").insert(data).execute()
+        print("Successfully logged to Supabase.")
+        
+    except Exception as e:
+        print(f"Error logging to Supabase: {e}")
 
 def main():
     load_dotenv()

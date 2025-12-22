@@ -33,6 +33,8 @@ jobs:
         KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
         # Pass the key content directly
         KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         # Optional: Set to 'true' if you want to test without spending money
         DRY_RUN: 'false'
       run: |

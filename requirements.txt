@@ -2,3 +2,4 @@ requests
 google-genai
 python-dotenv>=1.0.0
 cryptography
+supabase
