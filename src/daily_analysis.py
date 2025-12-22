@@ -260,11 +260,19 @@ def execute_bet(client, decision, dry_run=False):
     # Place the order
     order_response = client.place_order(ticker, side, count, price, dry_run=dry_run)
     
+    # Get current portfolio balance
+    balance_info = client.get_balance()
+    balance = None
+    if balance_info:
+        # Extract the balance from the response
+        # Kalshi API typically returns {"balance": XXXX} in cents
+        balance = balance_info.get("balance", 0) / 100.0  # Convert cents to dollars
+    
     # Log to Supabase if order was seemingly successful (or dry run)
     if order_response:
-        log_bet_to_supabase(decision, count, bet_amount, dry_run)
+        log_bet_to_supabase(decision, count, bet_amount, balance, dry_run)
 
-def log_bet_to_supabase(decision, count, amount, dry_run=False):
+def log_bet_to_supabase(decision, count, amount, portfolio_balance, dry_run=False):
     """
     Logs the bet details to Supabase.
     """
@@ -287,10 +295,11 @@ def log_bet_to_supabase(decision, count, amount, dry_run=False):
             "amount": amount,
             "reasoning": decision.get("reasoning", ""),
             "confidence": decision.get("confidence", ""),
-            "status": "dry_run" if dry_run else "open"
+            "status": "dry_run" if dry_run else "open",
+            "portfolio_balance": portfolio_balance
         }
         
-        print(f"Logging bet to Supabase: {data['ticker']} ({data['side']})")
+        print(f"Logging bet to Supabase: {data['ticker']} ({data['side']}) | Balance: ${portfolio_balance:.2f}" if portfolio_balance else f"Logging bet to Supabase: {data['ticker']} ({data['side']})")
         supabase.table("bets").insert(data).execute()
         print("Successfully logged to Supabase.")
         
