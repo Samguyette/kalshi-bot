@@ -29,18 +29,29 @@ class KalshiClient:
                         password=None
                     )
             elif self.private_key_content:
-                # Handle cases where the key is passed as a string (e.g. GitHub Actions)
-                # Ensure it has the correct headers/footers and newlines if user copy-pasted poorly
+                # Robustly clean and format the key content
                 content = self.private_key_content.strip()
-                # If content was squashed to one line, try to fix it (naive heuristic)
-                if "-----BEGIN RSA PRIVATE KEY-----" in content and "\n" not in content:
-                    content = content.replace("-----BEGIN RSA PRIVATE KEY-----", "-----BEGIN RSA PRIVATE KEY-----\n")
-                    content = content.replace("-----END RSA PRIVATE KEY-----", "\n-----END RSA PRIVATE KEY-----")
-                    # This is risky if the middle is also squashed without spaces, but standard pem is 64 chars/line.
-                    # Retrying to just load exactly as given first
+                
+                # Check for standard headers
+                if "BEGIN RSA PRIVATE KEY" in content:
+                    header = "-----BEGIN RSA PRIVATE KEY-----"
+                    footer = "-----END RSA PRIVATE KEY-----"
+                elif "BEGIN PRIVATE KEY" in content:
+                    header = "-----BEGIN PRIVATE KEY-----"
+                    footer = "-----END PRIVATE KEY-----"
+                else:
+                    raise ValueError("Invalid Private Key format: Missing header")
+
+                # Remove existing headers/footers and all whitespace/newlines from the body to get raw base64
+                body = content.replace(header, "").replace(footer, "").replace(" ", "").replace("\n", "").replace("\r", "")
+                
+                # Reconstruct the PEM with correct spacing
+                # Note: cryptography usually handles one long line for the body, 
+                # but strictly requires the header and footer on separate lines.
+                formatted_key = f"{header}\n{body}\n{footer}"
                 
                 self.private_key = serialization.load_pem_private_key(
-                    content.encode('utf-8'),
+                    formatted_key.encode('utf-8'),
                     password=None
                 )
         except Exception as e:
