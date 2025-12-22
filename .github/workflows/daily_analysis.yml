@@ -26,19 +26,13 @@ jobs:
         python -m pip install --upgrade pip
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-    - name: Create Private Key File
-      # We write the secret content to a file because the Python script expects a file path
-      run: |
-        echo "${{ secrets.KALSHI_PRIVATE_KEY }}" > kalshi_private_key.pem
-        chmod 600 kalshi_private_key.pem
-
     - name: Run Daily Analysis
       env:
         # Map secrets to environment variables
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         KALSHI_API_KEY_ID: ${{ secrets.KALSHI_API_KEY_ID }}
-        # Point to the file we just created
-        KALSHI_PRIVATE_KEY_PATH: ./kalshi_private_key.pem
+        # Pass the key content directly
+        KALSHI_PRIVATE_KEY: ${{ secrets.KALSHI_PRIVATE_KEY }}
         # Optional: Set to 'true' if you want to test without spending money
         DRY_RUN: 'false'
       run: |

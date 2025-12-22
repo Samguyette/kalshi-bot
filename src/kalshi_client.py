@@ -18,17 +18,33 @@ class KalshiClient:
         self.session = requests.Session()
         self.key_id = os.environ.get("KALSHI_API_KEY_ID")
         self.private_key_path = os.environ.get("KALSHI_PRIVATE_KEY_PATH")
+        self.private_key_content = os.environ.get("KALSHI_PRIVATE_KEY")
         self.private_key = None
         
-        if self.private_key_path:
-            try:
+        try:
+            if self.private_key_path and os.path.exists(self.private_key_path):
                 with open(self.private_key_path, "rb") as key_file:
                     self.private_key = serialization.load_pem_private_key(
                         key_file.read(),
                         password=None
                     )
-            except Exception as e:
-                print(f"Error loading private key: {e}")
+            elif self.private_key_content:
+                # Handle cases where the key is passed as a string (e.g. GitHub Actions)
+                # Ensure it has the correct headers/footers and newlines if user copy-pasted poorly
+                content = self.private_key_content.strip()
+                # If content was squashed to one line, try to fix it (naive heuristic)
+                if "-----BEGIN RSA PRIVATE KEY-----" in content and "\n" not in content:
+                    content = content.replace("-----BEGIN RSA PRIVATE KEY-----", "-----BEGIN RSA PRIVATE KEY-----\n")
+                    content = content.replace("-----END RSA PRIVATE KEY-----", "\n-----END RSA PRIVATE KEY-----")
+                    # This is risky if the middle is also squashed without spaces, but standard pem is 64 chars/line.
+                    # Retrying to just load exactly as given first
+                
+                self.private_key = serialization.load_pem_private_key(
+                    content.encode('utf-8'),
+                    password=None
+                )
+        except Exception as e:
+            print(f"Error loading private key: {e}")
 
     def sign_request(self, method: str, path: str, timestamp: str) -> str:
         """
@@ -92,6 +108,9 @@ class KalshiClient:
             
             if not cursor:
                 break
+            
+            # Sleep to avoid 429 Rate Limits
+            time.sleep(0.2)
                 
         return all_markets
 
