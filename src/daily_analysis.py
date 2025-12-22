@@ -1,7 +1,12 @@
 import os
 import sys
 from datetime import datetime, timezone, timedelta
+from google import genai
+from google.genai import types
+from dotenv import load_dotenv
 from kalshi_client import KalshiClient
+import re
+import math
 
 def get_analysis_window():
     """
@@ -104,7 +109,120 @@ Output ONLY your single best pick in this format:
 """
     return prompt
 
+def call_google_llm(prompt):
+    """
+    Calls Google's Gemini 2.0 Flash Thinking model with the generated prompt.
+    """
+def call_google_llm(prompt):
+    """
+    Calls Google's Gemini models with fallback logic.
+    Attempts models in order: Gemini 3 -> Gemini 2.0 Flash Thinking -> Gemini 2.0 Flash
+    """
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        print("\n" + "!"*50)
+        print("ERROR: GEMINI_API_KEY not found in environment variables.")
+        print("Please check your .env file.")
+        print("!"*50 + "\n")
+        return None
+
+    client = genai.Client(api_key=api_key)
+    
+    # Priority list of models to try
+    models_to_try = [
+        "gemini-3-pro-preview",       # Best (likely paid/limited)
+        "gemini-2.0-flash-exp",       # Experimental Flash (often has thinking/better reasing)
+        "gemini-2.0-flash",           # Standard Flash 2.0 (Solid)
+        "gemini-flash-latest"         # Fallback to 1.5 Flash
+    ]
+
+    for model_name in models_to_try:
+        try:
+            print(f"Sending analysis request to Google (Model: {model_name})...")
+            response = client.models.generate_content(
+                model=model_name,
+                contents=[prompt]
+            )
+            return response.text
+        except Exception as e:
+            # Check if it looks like a quota error (429) or other resource exhaustion
+            error_str = str(e)
+            if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
+                print(f"Warning: Quota exceeded/Error with {model_name}. Falling back...")
+            else:
+                # For other errors, we might also want to try the next model just in case,
+                # but print the specific error.
+                print(f"Warning: Error with {model_name}: {e}. Falling back...")
+            
+            # Continue to next model
+            continue
+
+    print("ERROR: All models failed to generate a response.")
+    return None
+
+def parse_llm_decision(llm_output):
+    """
+    Parses the LLM output to extract the trade decision.
+    Expected format: ### MATCH: [Ticker] [Buy YES/NO] @ [Price]
+    Example: ### MATCH: BRRR-24DEC31 Buy YES @ 0.45
+    """
+    if not llm_output:
+        return None
+        
+    # Regex to capture Ticker, Side (Buy YES/NO), and Price
+    pattern = r"### MATCH:\s*([A-Za-z0-9-]+)\s+(?:\[?Buy\s+)?(YES|NO)\]?\s*@\s*[\$]?([0-9.]+)"
+    match = re.search(pattern, llm_output, re.IGNORECASE)
+    
+    if match:
+        ticker = match.group(1).strip()
+        side = match.group(2).strip().upper()
+        price = float(match.group(3))
+        return {
+            "ticker": ticker,
+            "side": side,
+            "price": price
+        }
+    return None
+
+def execute_bet(client, decision):
+    """
+    Executes the bet based on the parsed decision.
+    Bet size is fixed at ~$5.00.
+    """
+    if not decision:
+        return
+        
+    ticker = decision["ticker"]
+    side = decision["side"]
+    price = decision["price"]
+    
+    bet_amount = 5.00
+    
+    # Calculate count: Floor(5.00 / Price)
+    if price <= 0:
+        print("Error: Invalid price detected.")
+        return
+        
+    count = math.floor(bet_amount / price)
+    
+    if count < 1:
+        print(f"Price (${price}) is too high for a $5 bet.")
+        return
+        
+    print(f"\n" + "="*50)
+    print(f"EXECUTING AUTOMATED BET")
+    print(f"Target: {ticker}")
+    print(f"Side:   {side}")
+    print(f"Price:  ${price}")
+    print(f"Count:  {count} contracts")
+    print(f"Total:  ${count * price:.2f}")
+    print("="*50 + "\n")
+    
+    # Place the order
+    client.place_order(ticker, side, count, price)
+
 def main():
+    load_dotenv()
     client = KalshiClient()
     
     min_ts, max_ts = get_analysis_window()
@@ -131,8 +249,24 @@ def main():
     prompt = generate_llm_prompt(top_markets)
     
     print("\n" + "="*50 + "\n")
+    print("Generated Prompt (feeding to LLM...):")
     print(prompt)
-    print("\n" + "="*50 + "\n")
+    print("="*50 + "\n")
+
+    # Call Google LLM
+    analysis = call_google_llm(prompt)
+    
+    if analysis:
+        print("\n" + "*"*20 + " GOOGLE THINKING LLM PREDICTION " + "*"*20 + "\n")
+        print(analysis)
+        print("\n" + "*"*70 + "\n")
+        
+        # Parse and Bet
+        decision = parse_llm_decision(analysis)
+        if decision:
+            execute_bet(client, decision)
+        else:
+            print("Could not parse a valid trade decision from the LLM output.")
 
 if __name__ == "__main__":
     main()

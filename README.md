@@ -6,10 +6,17 @@ A Python tool to analyze prediction markets on Kalshi. It fetches markets closin
 
 1.  **Install Dependencies**:
     ```bash
-    pip install requests
+    pip install -r requirements.txt
     ```
 
-2.  **Usage**:
+2.  **Configuration**:
+    *   Get a **Google GenAI API Key** from [Google AI Studio](https://aistudio.google.com/app/apikey).
+    *   Create a `.env` file in the project root:
+        ```bash
+        GEMINI_API_KEY="your_api_key_here"
+        ```
+
+3.  **Usage**:
     Run the analysis script:
     ```bash
     python3 src/daily_analysis.py
