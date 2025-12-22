@@ -63,9 +63,19 @@ def format_market_for_prompt(market):
     except:
         pass
         
+    # Rules
+    rules = market.get("rules_primary", "")
+    if rules:
+        # Truncate to keep it concise but useful (first 300 chars)
+        if len(rules) > 300:
+            rules = rules[:297] + "..."
+        rules_str = f" | Rules: {rules}"
+    else:
+        rules_str = ""
+
     # Concise Format:
-    # TICKER | Title (Subtitle) | Close: ... | Y: $P | N: $P | Spread: $S | Lst: $P | V: Val | L: Val
-    return f"{ticker} | {title} ({subtitle}) | Close:{market.get('close_time', '')} | Y:${yes_price} N:${no_price}{spread_str} | Last:${last_price} | Vol:{volume} Liq:{liquidity}"
+    # TICKER | Title (Subtitle) | Close: ... | Y: $P | N: $P | Spread: $S | Lst: $P | V: Val | L: Val | Rules: ...
+    return f"{ticker} | {title} ({subtitle}) | Close:{market.get('close_time', '')} | Y:${yes_price} N:${no_price}{spread_str} | Last:${last_price} | Vol:{volume} Liq:{liquidity}{rules_str}"
 
 def generate_llm_prompt(markets):
     """
@@ -87,28 +97,38 @@ def generate_llm_prompt(markets):
     prompt = f"""
 # Prediction Market Analysis Request for {today_str}
 
-## Objective
-Identify the SINGLE most profitable trading opportunity from the list below. 
-These markets close between 24 hours and 7 days from now.
+## Role & Objective
+You are a World-Class Superforecaster and Hedge Fund Manager. Your goal is to identify the SINGLE best risk-adjusted trade from the list below.
+You do NOT care about "excitement" or "narrative". You care about Expected Value (EV) and mispricing relative to base rates.
 
-## Analysis Criteria
-1. **Spread & Vigorish**: Check the "Spread". If Yes+No > $1.02, the trade requires a significantly higher edge to be profitable. Avoid high-fee markets.
-2. **Skepticism of Long Shots**: Apply a heavy penalty to any option priced below $0.05 ($1 to $5 bets). Leftover active markets with low volume are often efficiently priced or "dead".
-3. **EV & Probability**: Compare implied probability (Price) vs real-world likelihood.
-4. **Liquidity**: Ensure sufficient volume/liquidity to execute.
+## Analysis Framework
+1. **Base Rate Anchoring**: For each potential candidate, ask: "What is the historical frequency of this event?" (e.g., How often does a bill pass in 3 days? How often does a movie make $100M?).
+2. **True Probability Estimation**: Derived from base rates + specific news.
+3. **EV Calculation**: Compare your True Probability vs. the Market Implied Probability (Price).
+   - If True Prob > Price (for YES), EV is positive.
+   - If True Prob < Price (for NO), EV is positive.
+   - EV = (Prob_Win * $Profit_if_Win) - (Prob_Loss * Cost_of_Bet)
+   - $Profit_if_Win approx ($1.00 - Price). Cost_of_Bet = Price.
+
+## Constraints & Rules
+1. **Spread / Vig**: Ignore markets with Spread > $1.05 unless the edge is massive.
+2. **Liquidity**: Avoid markets with Liquidity < $100 unless you are 99% certain.
+3. **Long Shot Penalty**: Be extremely skeptical of prices < $0.05 or > $0.95. The market is usually right at extremes.
+4. **Execution**: You can buy "YES" or "NO".
 
 ## Market Data
-(Format: Ticker | Title (Subtitle) | Close: Time | Y: YesAsk | N: NoAsk | Spread: Sum | Last: LastPrice | Vol: Volume | Liq: Liquidity)
+(Format: Ticker | Title (Subtitle) | Close: Time | Y: YesAsk | N: NoAsk | Spread: Sum | Last: LastPrice | Vol: Volume | Liq: Liquidity | Rules: RulesSummary)
 {markets_text}
 
-## Required Output Format
-You must output a JSON object with the following schema:
+## Required Output Format (JSON ONLY)
+You must output a single valid JSON object. Do not output markdown code blocks.
 {{
   "ticker": "MARKET-TICKER",
   "side": "YES" or "NO",
   "price": 0.45,
-  "confidence": "High" or "Medium" or "Low",
-  "reasoning": "Concise explanation..."
+  "estimated_true_probability": 0.65,
+  "confidence": "High" or "Medium",
+  "reasoning": "Step-by-step superforecasting analysis: Base rate is X. Specifics are Y. Market is mispriced because Z. EV calculation..."
 }}
 """
     return prompt
