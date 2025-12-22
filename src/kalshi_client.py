@@ -119,7 +119,9 @@ class KalshiClient:
         Places a limit order on Kalshi.
         """
         if not self.key_id or not self.private_key:
-            print("Error: Missing credentials for order placement.")
+            print(f"Error: Missing credentials for order placement.")
+            print(f"DEBUG: Key ID present? {bool(self.key_id)}")
+            print(f"DEBUG: Private Key loaded? {bool(self.private_key)}")
             return None
             
         path = "/portfolio/orders"
