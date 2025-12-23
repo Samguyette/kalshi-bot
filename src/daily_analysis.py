@@ -289,6 +289,9 @@ def log_bet_to_supabase(decision, count, amount, portfolio_balance, dry_run=Fals
         data = {
             "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
             "ticker": decision["ticker"],
+            "title": decision.get("title", ""),
+            "subtitle": decision.get("subtitle", ""),
+            "rules": decision.get("rules", ""),
             "side": decision["side"],
             "price": decision["price"],
             "count": count,
@@ -352,6 +355,15 @@ def main():
         # Parse and Bet
         decision = parse_llm_decision(analysis)
         if decision:
+            # Enrich decision with market details (Title, Subtitle, Rules)
+            # Find the market in top_markets that matches the ticker
+            matching_market = next((m for m in top_markets if m.get("ticker") == decision["ticker"]), None)
+            
+            if matching_market:
+                decision["title"] = matching_market.get("title", "")
+                decision["subtitle"] = matching_market.get("subtitle") or matching_market.get("yes_sub_title", "")
+                decision["rules"] = matching_market.get("rules_primary", "")
+                
             execute_bet(client, decision, dry_run=dry_run)
         else:
             print("Could not parse a valid trade decision from the LLM output.")
