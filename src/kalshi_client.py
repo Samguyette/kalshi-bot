@@ -215,3 +215,48 @@ class KalshiClient:
             if hasattr(e, 'response') and e.response is not None:
                 print(f"Response: {e.response.text}")
             return None
+
+    def get_market(self, ticker: str) -> Optional[Dict[str, Any]]:
+        """
+        Fetches a single market by ticker.
+        """
+        url = f"{self.BASE_URL}/markets/{ticker}"
+        
+        try:
+            response = self.session.get(url)
+            response.raise_for_status()
+            data = response.json()
+            return data.get("market")
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching market {ticker}: {e}")
+            return None
+
+    def get_positions(self) -> Optional[Dict[str, Any]]:
+        """
+        Fetches the user's current positions.
+        """
+        if not self.key_id or not self.private_key:
+            print("Error: Missing credentials for positions check.")
+            return None
+            
+        path = "/portfolio/positions"
+        url = f"{self.BASE_URL}{path}"
+        method = "GET"
+        timestamp = str(int(time.time() * 1000))
+        
+        headers = {
+            "KALSHI-ACCESS-KEY": self.key_id,
+            "KALSHI-ACCESS-TIMESTAMP": timestamp,
+            "KALSHI-ACCESS-SIGNATURE": self.sign_request(method, "/trade-api/v2" + path, timestamp),
+            "Content-Type": "application/json"
+        }
+        
+        try:
+            response = self.session.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching positions: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                print(f"Response: {e.response.text}")
+            return None
