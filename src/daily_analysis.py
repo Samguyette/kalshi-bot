@@ -260,6 +260,20 @@ def execute_bet(client, decision, dry_run=False):
     # Place the order
     order_response = client.place_order(ticker, side, count, price, dry_run=dry_run)
     
+    # Extract fee information from order response
+    fee_amount = None
+    if order_response and not dry_run:
+        # The response contains an "order" object with fee details
+        order_data = order_response.get("order", {})
+        taker_fees = order_data.get("taker_fees_dollars", 0)
+        maker_fees = order_data.get("maker_fees_dollars", 0)
+        
+        # Total fees incurred
+        fee_amount = float(taker_fees) + float(maker_fees)
+        
+        if fee_amount > 0:
+            print(f"Fees: Taker: ${taker_fees} | Maker: ${maker_fees} | Total: ${fee_amount:.2f}")
+    
     # Get current portfolio balance
     balance_info = client.get_balance()
     balance = None
@@ -274,9 +288,9 @@ def execute_bet(client, decision, dry_run=False):
     
     # Log to Supabase if order was seemingly successful (or dry run)
     if order_response:
-        log_bet_to_supabase(decision, count, bet_amount, balance, dry_run)
+        log_bet_to_supabase(decision, count, bet_amount, balance, fee_amount, dry_run)
 
-def log_bet_to_supabase(decision, count, amount, portfolio_balance, dry_run=False):
+def log_bet_to_supabase(decision, count, amount, portfolio_balance, fee_amount=None, dry_run=False):
     """
     Logs the bet details to Supabase.
     """
@@ -303,10 +317,13 @@ def log_bet_to_supabase(decision, count, amount, portfolio_balance, dry_run=Fals
             "reasoning": decision.get("reasoning", ""),
             "confidence": decision.get("confidence", ""),
             "status": "dry_run" if dry_run else "open",
-            "portfolio_balance": portfolio_balance
+            "portfolio_balance": portfolio_balance,
+            "fee": fee_amount
         }
         
-        print(f"Logging bet to Supabase: {data['ticker']} ({data['side']}) | Balance: ${portfolio_balance:.2f}" if portfolio_balance else f"Logging bet to Supabase: {data['ticker']} ({data['side']})")
+        fee_msg = f" | Fee: ${fee_amount:.2f}" if fee_amount else ""
+        balance_msg = f" | Balance: ${portfolio_balance:.2f}" if portfolio_balance else ""
+        print(f"Logging bet to Supabase: {data['ticker']} ({data['side']}){fee_msg}{balance_msg}")
         supabase.table("bets").insert(data).execute()
         print("Successfully logged to Supabase.")
         

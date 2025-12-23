@@ -2,7 +2,7 @@ name: Daily Prediction Market Analysis
 
 on:
   schedule:
-    # Runs at 02:00 and 14:00 UTC everyday (6:00 PM and 6:00 AM PST)
+    # Runs at 08:00 and 20:00 UTC everyday (12:00 AM and 12:00 PM PST)
     - cron: '0 8,20 * * *'
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
