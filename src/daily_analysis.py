@@ -265,8 +265,12 @@ def execute_bet(client, decision, dry_run=False):
     balance = None
     if balance_info:
         # Extract the balance from the response
-        # Kalshi API typically returns {"balance": XXXX} in cents
-        balance = balance_info.get("balance", 0) / 100.0  # Convert cents to dollars
+        # Kalshi API returns values in cents
+        cash_balance = balance_info.get("balance", 0) / 100.0
+        position_value = balance_info.get("portfolio_value", 0) / 100.0
+        
+        balance = cash_balance + position_value
+        print(f"Portfolio Status: Cash: ${cash_balance:.2f} | Positions: ${position_value:.2f} | Total Equity: ${balance:.2f}")
     
     # Log to Supabase if order was seemingly successful (or dry run)
     if order_response:
