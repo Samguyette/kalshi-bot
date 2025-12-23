@@ -223,7 +223,7 @@ def parse_llm_decision(llm_output):
 def execute_bet(client, decision, dry_run=False):
     """
     Executes the bet based on the parsed decision.
-    Bet size is fixed at ~$5.00.
+    Bet size is fixed at ~$4.00.
     """
     if not decision:
         return
@@ -232,9 +232,9 @@ def execute_bet(client, decision, dry_run=False):
     side = decision["side"]
     price = decision["price"]
     
-    bet_amount = 5.00
+    bet_amount = 4.00
     
-    # Calculate count: Floor(5.00 / Price)
+    # Calculate count: Floor(bet_amount / Price)
     if price <= 0:
         print("Error: Invalid price detected.")
         return
@@ -242,7 +242,7 @@ def execute_bet(client, decision, dry_run=False):
     count = math.floor(bet_amount / price)
     
     if count < 1:
-        print(f"Price (${price}) is too high for a $5 bet.")
+        print(f"Price (${price}) is too high for a ${bet_amount} bet.")
         return
         
     print(f"\n" + "="*50)
