@@ -5,10 +5,12 @@ import os
 from dotenv import load_dotenv
 
 from kalshi_client import KalshiClient
-from market_formatter import get_analysis_window
+from market_formatter import get_analysis_window, filter_and_diversify_markets
 from llm_service import generate_llm_prompt, call_google_llm, parse_llm_decision
 from bet_executor import execute_bet
 from bet_tracker import check_and_update_bet_statuses
+
+
 
 
 def main():
@@ -26,14 +28,8 @@ def main():
     
     print(f"Found {len(all_markets)} markets potentially closing in this window.")
 
-    # Filter out dead markets (no liquidity)
-    # If volume is 0, it might still have liquidity (asks/bids)
-    active_markets = [m for m in all_markets if m.get("liquidity", 0) > 0]
-    
-    print(f"Filtered to {len(active_markets)} active markets (Liquidity > 0).")
-
-    # Sort by Volume (desc), then Liquidity (desc)
-    active_markets.sort(key=lambda x: (x.get("volume", 0), x.get("liquidity", 0)), reverse=True)
+    # Apply filters (Odds, Spread, Diversity)
+    active_markets = filter_and_diversify_markets(all_markets)
     
     # Take top 15 to avoid token limits and noise
     top_markets = active_markets[:15]
