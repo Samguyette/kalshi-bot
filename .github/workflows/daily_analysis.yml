@@ -38,4 +38,4 @@ jobs:
         # Optional: Set to 'true' if you want to test without spending money
         DRY_RUN: 'false'
       run: |
-        python src/daily_analysis.py
+        python src/main.py
