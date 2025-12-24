@@ -80,10 +80,19 @@ def format_market_for_prompt(market):
 
 def generate_llm_prompt(markets):
     """
-    Generates the full prompt for the Thinking LLM.
+    Generates the full prompt for the Thinking LLM using the template file.
     """
-    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    # Load the prompt template
+    template_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'prompts', 'v2.md')
     
+    try:
+        with open(template_path, 'r', encoding='utf-8') as f:
+            prompt_template = f.read()
+    except FileNotFoundError:
+        # Fallback error message if template file is missing
+        return "Error: Prompt template file not found at " + template_path
+    
+    # Format market data
     market_sections = []
     for m in markets:
         formatted = format_market_for_prompt(m)
@@ -95,43 +104,12 @@ def generate_llm_prompt(markets):
 
     markets_text = "\n".join(market_sections)
     
-    prompt = f"""
-# Prediction Market Analysis Request for {today_str}
-
-## Role & Objective
-You are a World-Class Superforecaster and Hedge Fund Manager. Your goal is to identify the SINGLE best risk-adjusted trade from the list below.
-You do NOT care about "excitement" or "narrative". You care about Expected Value (EV) and mispricing relative to base rates.
-
-## Analysis Framework
-1. **Base Rate Anchoring**: For each potential candidate, ask: "What is the historical frequency of this event?" (e.g., How often does a bill pass in 3 days? How often does a movie make $100M?).
-2. **True Probability Estimation**: Derived from base rates + specific news.
-3. **EV Calculation**: Compare your True Probability vs. the Market Implied Probability (Price).
-   - If True Prob > Price (for YES), EV is positive.
-   - If True Prob < Price (for NO), EV is positive.
-   - EV = (Prob_Win * $Profit_if_Win) - (Prob_Loss * Cost_of_Bet)
-   - $Profit_if_Win approx ($1.00 - Price). Cost_of_Bet = Price.
-
-## Constraints & Rules
-1. **Spread / Vig**: Ignore markets with Spread > $1.05 unless the edge is massive.
-2. **Liquidity**: Avoid markets with Liquidity < $100 unless you are 99% certain.
-3. **Long Shot Penalty**: Be extremely skeptical of prices < $0.05 or > $0.95. The market is usually right at extremes.
-4. **Execution**: You can buy "YES" or "NO".
-
-## Market Data
-(Format: Ticker | Title (Subtitle) | Close: Time | Y: YesAsk | N: NoAsk | Spread: Sum | Last: LastPrice | Vol: Volume | Liq: Liquidity | Rules: RulesSummary)
-{markets_text}
-
-## Required Output Format (JSON ONLY)
-You must output a single valid JSON object. Do not output markdown code blocks.
-{{
-  "ticker": "MARKET-TICKER",
-  "side": "YES" or "NO",
-  "price": 0.45,
-  "estimated_true_probability": 0.65,
-  "confidence": "High" or "Medium",
-  "reasoning": "Step-by-step superforecasting analysis: Base rate is X. Specifics are Y. Market is mispriced because Z. EV calculation..."
-}}
-"""
+    # Replace the placeholders
+    prompt = prompt_template.replace("[MARKET DATA GOES HERE]", markets_text)
+    
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    prompt = prompt.replace("[DATE]", today_str)
+    
     return prompt
 
 
@@ -172,7 +150,9 @@ def call_google_llm(prompt, dry_run=False):
             print(f"Sending analysis request to Google (Model: {model_name})...")
             response = client.models.generate_content(
                 model=model_name,
-                config=types.GenerateContentConfig(response_mime_type="application/json"),
+                config=types.GenerateContentConfig(
+                    tools=[types.Tool(google_search=types.GoogleSearch())]
+                ),
                 contents=[prompt]
             )
             return response.text
@@ -195,18 +175,35 @@ def call_google_llm(prompt, dry_run=False):
 def parse_llm_decision(llm_output):
     """
     Parses the LLM output to extract the trade decision from JSON.
+    Handles markdown code blocks and other formatting issues.
     """
     if not llm_output:
         return None
         
     try:
-        # Clean up any potential markdown code blocks like ```json ... ```
         cleaned_output = llm_output.strip()
-        if cleaned_output.startswith("```"):
-            cleaned_output = cleaned_output.split("\n", 1)[1]
-            if cleaned_output.endswith("```"):
-                cleaned_output = cleaned_output.rsplit("\n", 1)[0]
         
+        # Remove markdown code blocks (```json ... ``` or ``` ... ```)
+        if cleaned_output.startswith("```"):
+            # Find the first newline after opening ```
+            first_newline = cleaned_output.find("\n")
+            if first_newline != -1:
+                cleaned_output = cleaned_output[first_newline + 1:]
+            
+            # Remove closing ```
+            if cleaned_output.endswith("```"):
+                last_backticks = cleaned_output.rfind("```")
+                cleaned_output = cleaned_output[:last_backticks]
+        
+        # Strip whitespace again after removing markdown
+        cleaned_output = cleaned_output.strip()
+        
+        # Remove trailing comma before closing brace (common LLM mistake)
+        # Match pattern like: ,"  } or ,\n}
+        import re
+        cleaned_output = re.sub(r',(\s*})$', r'\1', cleaned_output)
+        
+        # Parse JSON
         data = json.loads(cleaned_output)
         
         return {
@@ -216,8 +213,12 @@ def parse_llm_decision(llm_output):
             "reasoning": data.get("reasoning"),
             "confidence": data.get("confidence")
         }
-    except Exception as e:
+    except json.JSONDecodeError as e:
         print(f"Error parsing JSON from LLM: {e}")
+        print(f"Attempted to parse: {cleaned_output[:500]}...")
+        return None
+    except Exception as e:
+        print(f"Unexpected error parsing LLM output: {e}")
         return None
 
 def execute_bet(client, decision, dry_run=False):
@@ -435,8 +436,8 @@ def main():
     # Sort by Volume (desc), then Liquidity (desc)
     active_markets.sort(key=lambda x: (x.get("volume", 0), x.get("liquidity", 0)), reverse=True)
     
-    # Take top 50 to avoid token limits and noise
-    top_markets = active_markets[:50]
+    # Take top 25 to avoid token limits and noise
+    top_markets = active_markets[:15]
 
     # Generate and print prompt
     prompt = generate_llm_prompt(top_markets)
