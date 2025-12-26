@@ -5,7 +5,7 @@ import os
 from dotenv import load_dotenv
 
 from kalshi_client import KalshiClient
-from market_formatter import get_analysis_window, filter_and_diversify_markets
+from market_formatter import fetch_and_process_markets
 from llm_service import generate_llm_prompt, call_google_llm, parse_llm_decision
 from bet_executor import execute_bet
 from bet_tracker import check_and_update_bet_statuses
@@ -20,19 +20,8 @@ def main():
     # Check and update statuses of existing open bets
     check_and_update_bet_statuses(client)
     
-    min_ts, max_ts = get_analysis_window()
-    print(f"Fetching markets expiring between {min_ts} and {max_ts} (1 Day to 7 Days out)...")
-    
-    # Fetch all markets using pagination
-    all_markets = client.get_all_markets(min_close_ts=min_ts, max_close_ts=max_ts)
-    
-    print(f"Found {len(all_markets)} markets potentially closing in this window.")
-
-    # Apply filters (Odds, Spread, Diversity)
-    active_markets = filter_and_diversify_markets(all_markets)
-    
-    # Take top 15 to avoid token limits and noise
-    top_markets = active_markets[:15]
+    # Fetch and process top markets (fetching, filtering, enriching)
+    top_markets = fetch_and_process_markets(client)
 
     # Generate and print prompt
     PROMPT_VERSION = "v2"

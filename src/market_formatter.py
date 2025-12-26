@@ -60,12 +60,29 @@ def format_market_for_prompt(market):
         pass
         
     # Rules
-    rules = market.get("rules_primary", "")
-    if rules:
-        # Truncate to keep it concise but useful (first 300 chars)
-        if len(rules) > 300:
-            rules = rules[:297] + "..."
-        rules_str = f" | Rules: {rules}"
+    rules_primary = market.get("rules_primary", "")
+    rules_secondary = market.get("rules_secondary", "")
+    
+    full_rules = rules_primary
+    
+    # Add Settlement Sources
+    settlement_sources = market.get("settlement_sources", [])
+    if settlement_sources:
+        # Extract names like "ESPN", "Fox Sports"
+        source_names = [s.get("name", "") for s in settlement_sources if s.get("name")]
+        if source_names:
+            if len(source_names) == 1:
+                full_rules += f" Outcome verified from {source_names[0]}."
+            else:
+                # Join with "and" for the last one
+                sources_str = " and ".join([", ".join(source_names[:-1]), source_names[-1]]) if len(source_names) > 1 else source_names[0]
+                full_rules += f" Outcome verified from {sources_str}."
+    
+    if rules_secondary:
+        full_rules += " " + rules_secondary
+        
+    if full_rules:
+        rules_str = f" | Rules: {full_rules}"
     else:
         rules_str = ""
 
@@ -126,4 +143,34 @@ def filter_and_diversify_markets(markets):
             
     print(f"Markets after diversity filter (max 3 per series): {len(final_list)}")
     return final_list
+
+
+def fetch_and_process_markets(client, limit=15):
+    """
+    Orchestrates the fetching, filtering, and enriching of markets.
+    """
+    min_ts, max_ts = get_analysis_window()
+    print(f"Fetching markets expiring between {min_ts} and {max_ts} (1 Day to 7 Days out)...")
+    
+    # Fetch all markets using pagination
+    all_markets = client.get_all_markets(min_close_ts=min_ts, max_close_ts=max_ts)
+    print(f"Found {len(all_markets)} markets potentially closing in this window.")
+
+    # Apply filters (Odds, Spread, Diversity)
+    active_markets = filter_and_diversify_markets(all_markets)
+    
+    # Take top N to avoid token limits and noise
+    top_markets = active_markets[:limit]
+
+    # Enrich with Series Data (Settlement Sources)
+    print("Fetching series data for top markets to get full rules...")
+    for m in top_markets:
+        ticker = m.get("ticker", "")
+        if "-" in ticker:
+            series_ticker = ticker.split("-")[0]
+            series_data = client.get_series(series_ticker)
+            if series_data:
+                m["settlement_sources"] = series_data.get("settlement_sources", [])
+                
+    return top_markets
 

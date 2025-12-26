@@ -231,6 +231,21 @@ class KalshiClient:
             print(f"Error fetching market {ticker}: {e}")
             return None
 
+    def get_series(self, series_ticker: str) -> Optional[Dict[str, Any]]:
+        """
+        Fetches a single series by ticker.
+        """
+        url = f"{self.BASE_URL}/series/{series_ticker}"
+        
+        try:
+            response = self.session.get(url)
+            response.raise_for_status()
+            data = response.json()
+            return data.get("series")
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching series {series_ticker}: {e}")
+            return None
+
     def get_positions(self) -> Optional[Dict[str, Any]]:
         """
         Fetches the user's current positions.
