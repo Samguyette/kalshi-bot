@@ -117,19 +117,24 @@ def parse_llm_decision(llm_output):
     try:
         cleaned_output = llm_output.strip()
         
-        # Remove markdown code blocks (```json ... ``` or ``` ... ```)
-        if cleaned_output.startswith("```"):
-            # Find the first newline after opening ```
-            first_newline = cleaned_output.find("\n")
-            if first_newline != -1:
-                cleaned_output = cleaned_output[first_newline + 1:]
-            
-            # Remove closing ```
-            if cleaned_output.endswith("```"):
-                last_backticks = cleaned_output.rfind("```")
-                cleaned_output = cleaned_output[:last_backticks]
+        # Method 1: Regex for ```json ... ``` blocks
+        json_block_match = re.search(r"```json\s*(.*?)```", cleaned_output, re.DOTALL)
+        if json_block_match:
+            cleaned_output = json_block_match.group(1)
+        else:
+            # Method 2: Regex for generic ``` ... ``` blocks
+            # We look for the first block that looks like it might contain a JSON object (starts with {)
+            code_block_match = re.search(r"```\s*({.*})\s*```", cleaned_output, re.DOTALL)
+            if code_block_match:
+                cleaned_output = code_block_match.group(1)
+            else:
+                # Method 3: Fallback - find the first '{' and last '}'
+                start_idx = cleaned_output.find("{")
+                end_idx = cleaned_output.rfind("}")
+                if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                    cleaned_output = cleaned_output[start_idx:end_idx+1]
         
-        # Strip whitespace again after removing markdown
+        # Strip whitespace again after extraction
         cleaned_output = cleaned_output.strip()
         
         # Remove trailing comma before closing brace (common LLM mistake)
@@ -139,12 +144,17 @@ def parse_llm_decision(llm_output):
         # Parse JSON
         data = json.loads(cleaned_output)
         
+        def clean_str(s):
+            if isinstance(s, str):
+                return s.replace("**", "")
+            return s
+        
         return {
-            "ticker": data.get("ticker"),
-            "side": data.get("side"),
+            "ticker": clean_str(data.get("ticker")),
+            "side": clean_str(data.get("side")),
             "price": float(data.get("price", 0.0)),
-            "reasoning": data.get("reasoning"),
-            "confidence": data.get("confidence")
+            "reasoning": clean_str(data.get("reasoning")),
+            "confidence": clean_str(data.get("confidence"))
         }
     except json.JSONDecodeError as e:
         print(f"Error parsing JSON from LLM: {e}")
