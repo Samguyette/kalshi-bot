@@ -26,7 +26,7 @@ Automated analysis and trading tool for Kalshi prediction markets using Google's
     ```
 
 ## Automation (GitHub Actions)
-Runs twice daily at **12:00 AM and 12:00 PM PST** via GitHub Actions.
+Runs three times daily at **12:00 AM, 8:00 AM, and 4:00 PM PST** via GitHub Actions.
 
 ### Setup
 To enable the automation, you must add the following **Repository Secrets** in GitHub (Settings -> Secrets and variables -> Actions):

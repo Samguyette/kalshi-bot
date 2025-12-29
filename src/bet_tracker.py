@@ -106,10 +106,18 @@ def check_and_update_bet_statuses(client):
                 # Determine if bet won or lost
                 new_status = None
                 
-                if result == "yes":
+                # Normalize result string
+                result_clean = str(result).lower().strip()
+                
+                if result_clean == "yes":
                     new_status = "won" if side == "YES" else "lost"
-                elif result == "no":
+                elif result_clean == "no":
                     new_status = "won" if side == "NO" else "lost"
+                elif result_clean in ["void", "canceled", "cancelled", "refunded"]:
+                    new_status = "void"
+                elif result_clean == "" and market_status == "finalized":
+                    # Market finalized but no binary result (likely fair value settlement)
+                    new_status = "settled"
                 else:
                     print(f"  Warning: Unknown result '{result}' for {ticker}. Leaving as open.\n")
                     continue

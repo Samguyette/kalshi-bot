@@ -13,6 +13,14 @@ from bet_tracker import check_and_update_bet_statuses
 
 
 
+
+def clean_markdown(text):
+    """Simple helper to strip markdown syntax like bolding."""
+    if not isinstance(text, str):
+        return text
+    return text.replace("**", "")
+
+
 def main():
     load_dotenv()
     client = KalshiClient()
@@ -51,9 +59,9 @@ def main():
             matching_market = next((m for m in top_markets if m.get("ticker") == decision["ticker"]), None)
             
             if matching_market:
-                decision["title"] = matching_market.get("title", "")
-                decision["subtitle"] = matching_market.get("subtitle") or matching_market.get("yes_sub_title", "")
-                decision["rules"] = matching_market.get("rules_primary", "")
+                decision["title"] = clean_markdown(matching_market.get("title", ""))
+                decision["subtitle"] = clean_markdown(matching_market.get("subtitle") or matching_market.get("yes_sub_title", ""))
+                decision["rules"] = clean_markdown(matching_market.get("rules_primary", ""))
                 decision["prompt_used"] = PROMPT_VERSION
                 
             execute_bet(client, decision, dry_run=dry_run)
