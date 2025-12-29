@@ -32,7 +32,7 @@ def main():
     top_markets = fetch_and_process_markets(client)
 
     # Generate and print prompt
-    PROMPT_VERSION = "v2"
+    PROMPT_VERSION = "v3"
     prompt = generate_llm_prompt(top_markets, prompt_version=PROMPT_VERSION)
     
     print("\n" + "="*50 + "\n")
