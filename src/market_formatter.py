@@ -2,6 +2,7 @@
 Market data formatting utilities.
 """
 from datetime import datetime, timezone, timedelta
+from bet_tracker import get_bet_count_for_ticker
 
 
 def get_analysis_window():
@@ -216,6 +217,19 @@ def fetch_and_process_markets(client, limit=50):
     
     # Take top N to avoid token limits and noise
     top_markets = active_markets[:limit]
+    
+    # Filter out markets where we already have max exposure (>= 2 bets)
+    print("Filtering out maxed-out markets...")
+    filtered_markets = []
+    for m in top_markets:
+        ticker = m.get("ticker", "")
+        # Check exposure (max 2 bets per ticker)
+        count = get_bet_count_for_ticker(ticker)
+        if count >= 2:
+            print(f"  Skipping {ticker}: Max exposure reached ({count}/2 bets).")
+        else:
+            filtered_markets.append(m)
+    top_markets = filtered_markets
     
     # HARD CAP: Enforce max 15 markets for the LLM prompt to ensure focus
     if len(top_markets) > 15:
