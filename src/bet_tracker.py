@@ -16,6 +16,10 @@ def log_bet_to_supabase(decision, count, amount, portfolio_balance, fee_amount=N
     if not url or not key:
         print("Warning: SUPABASE_URL or SUPABASE_KEY not found. Skipping DB log.")
         return
+        
+    if dry_run:
+        print(f"Dry run enabled: Skipping Supabase logging for {decision['ticker']}.")
+        return
 
     try:
         supabase: Client = create_client(url, key)
