@@ -157,3 +157,23 @@ def get_bet_count_for_ticker(ticker):
     except Exception as e:
         print(f"Error querying bet count for {ticker}: {e}")
         return 0
+
+
+def get_active_bets():
+    """
+    Returns a list of currently open (active) bets from Supabase.
+    """
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_KEY")
+    
+    if not url or not key:
+        return []
+        
+    try:
+        supabase: Client = create_client(url, key)
+        # Fetch open bets, order by most recent
+        response = supabase.table("bets").select("ticker, side, title, amount, created_at").eq("status", "open").order("created_at", desc=True).execute()
+        return response.data
+    except Exception as e:
+        print(f"Error fetching active bets: {e}")
+        return []

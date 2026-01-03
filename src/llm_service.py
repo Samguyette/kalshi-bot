@@ -11,7 +11,7 @@ from google.genai import types
 from market_formatter import format_market_for_prompt
 
 
-def generate_llm_prompt(markets, prompt_version):
+def generate_llm_prompt(markets, active_bets, prompt_version):
     """
     Generates the full prompt for the Thinking LLM using the template file.
     """
@@ -37,8 +37,20 @@ def generate_llm_prompt(markets, prompt_version):
 
     markets_text = "\n".join(market_sections)
     
+    # Format active portfolio/bets
+    if active_bets:
+        portfolio_lines = []
+        for bet in active_bets:
+            # Simplify output: Ticker, Side, Title
+            line = f"- {bet.get('side')} on {bet.get('ticker')} ({bet.get('title')})"
+            portfolio_lines.append(line)
+        portfolio_text = "\n".join(portfolio_lines)
+    else:
+        portfolio_text = "No active positions."
+    
     # Replace the placeholders
     prompt = prompt_template.replace("[MARKET DATA GOES HERE]", markets_text)
+    prompt = prompt.replace("[PORTFOLIO_DATA]", portfolio_text)
     
     today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     prompt = prompt.replace("[DATE]", today_str)

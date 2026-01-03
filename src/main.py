@@ -8,7 +8,7 @@ from kalshi_client import KalshiClient
 from market_formatter import fetch_and_process_markets
 from llm_service import generate_llm_prompt, call_google_llm, parse_llm_decision
 from bet_executor import execute_bet
-from bet_tracker import check_and_update_bet_statuses
+from bet_tracker import check_and_update_bet_statuses, get_active_bets
 
 
 
@@ -31,9 +31,12 @@ def main():
     # Fetch and process top markets (fetching, filtering, enriching)
     top_markets = fetch_and_process_markets(client)
 
+    # Fetch active bets for portfolio context
+    active_bets = get_active_bets()
+
     # Generate and print prompt
     PROMPT_VERSION = "v4"
-    prompt = generate_llm_prompt(top_markets, prompt_version=PROMPT_VERSION)
+    prompt = generate_llm_prompt(top_markets, active_bets=active_bets, prompt_version=PROMPT_VERSION)
     
     print("\n" + "="*50 + "\n")
     print("Generated Prompt (feeding to LLM...):")
