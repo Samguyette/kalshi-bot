@@ -15,6 +15,19 @@ def execute_bet(client, decision, dry_run=False):
         return
         
     ticker = decision["ticker"]
+    
+    # CHECK MAX EXPOSURE (Max 2 bets per market ever)
+    # We do this check first to save computation/logging for skipped bets
+    from bet_tracker import get_bet_count_for_ticker
+    existing_bets = get_bet_count_for_ticker(ticker)
+    
+    if existing_bets >= 2:
+        print(f"\n" + "!"*50)
+        print(f"SKIP: Max exposure reached for {ticker}")
+        print(f"Existing bets: {existing_bets} (Limit: 2)")
+        print("!"*50 + "\n")
+        return
+
     side = decision["side"]
     price = decision["price"]
     

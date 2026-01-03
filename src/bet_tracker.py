@@ -136,3 +136,24 @@ def check_and_update_bet_statuses(client):
         
     except Exception as e:
         print(f"Error checking bet statuses: {e}\n")
+
+
+def get_bet_count_for_ticker(ticker):
+    """
+    Returns the number of bets placed for a given ticker.
+    """
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_KEY")
+    
+    if not url or not key:
+        print("Warning: SUPABASE_URL or SUPABASE_KEY not found. Assuming 0 bets.")
+        return 0
+        
+    try:
+        supabase: Client = create_client(url, key)
+        # Use simple exact match on ticker
+        response = supabase.table("bets").select("id", count="exact").eq("ticker", ticker).execute()
+        return response.count
+    except Exception as e:
+        print(f"Error querying bet count for {ticker}: {e}")
+        return 0

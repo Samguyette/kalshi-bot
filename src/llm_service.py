@@ -149,7 +149,17 @@ def parse_llm_decision(llm_output):
                 return s.replace("**", "")
             return s
         
+        # Use .get() defensively
+        decision_type = clean_str(data.get("decision", "BET"))
+        
+        if decision_type == "PASS":
+            return {
+                "decision": "PASS",
+                "reasoning": clean_str(data.get("reasoning"))
+            }
+
         return {
+            "decision": "BET",
             "ticker": clean_str(data.get("ticker")),
             "side": clean_str(data.get("side")),
             "price": float(data.get("price", 0.0)),
