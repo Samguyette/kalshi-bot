@@ -35,7 +35,7 @@ def main():
     active_bets = get_active_bets()
 
     # Generate and print prompt
-    PROMPT_VERSION = "v4"
+    PROMPT_VERSION = "v5"
     prompt = generate_llm_prompt(top_markets, active_bets=active_bets, prompt_version=PROMPT_VERSION)
     
     print("\n" + "="*50 + "\n")
@@ -47,7 +47,11 @@ def main():
     dry_run = os.environ.get("DRY_RUN", "false").lower() == "true"
 
     # Call Google LLM
-    analysis = call_google_llm(prompt, dry_run=dry_run)
+    # Allow forcing production models even in dry run for testing
+    force_prod = os.environ.get("FORCE_PROD", "false").lower() == "true"
+    llm_dry_run = dry_run and not force_prod
+    
+    analysis = call_google_llm(prompt, dry_run=llm_dry_run)
     
     if analysis:
         print("\n" + "*"*20 + " GOOGLE THINKING LLM PREDICTION " + "*"*20 + "\n")
