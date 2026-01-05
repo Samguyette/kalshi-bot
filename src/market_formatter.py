@@ -132,11 +132,14 @@ def smart_filter_markets(markets):
         "Close Price", "S&P", "NASDAQ", "Dow Jones", "Bitcoin", "Ethereum",
         
         # Sports (Sucker bets for LLMs - High vig, low edge)
-        "NFL", "NBA", "NCAAF", "MLB", "NHL", "Parlay"
+        "NFL", "NBA", "NCAAF", "MLB", "NHL", "Parlay",
+
+        # Specific "Will Say" markets (Ambiguous, often arb'd against LLMs)
+        "Will Trump say"
     ]
     
     # BANNED TICKERS (Strict Ban - Overrides Volume)
-    banned_ticker_prefixes = ["KXNFL", "KXNBA", "KXMLB", "KXNHL", "KXNCAAF"]
+    banned_ticker_prefixes = ["KXNFL", "KXNBA", "KXMLB", "KXNHL", "KXNCAAF", "KXTRUMPSAY"]
     
     filtered = []
     for m in markets:
