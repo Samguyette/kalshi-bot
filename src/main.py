@@ -9,21 +9,21 @@ from market_formatter import fetch_filtered_markets
 from llm_service import generate_llm_prompt, call_google_llm, parse_llm_decision
 from bet_executor import execute_bet
 from bet_tracker import check_and_update_bet_statuses, get_active_bets
+from utils import clean_markdown, check_sufficient_balance
 
 
 
 
 
-def clean_markdown(text):
-    """Simple helper to strip markdown syntax like bolding."""
-    if not isinstance(text, str):
-        return text
-    return text.replace("**", "")
+
 
 
 def main():
     load_dotenv()
     client = KalshiClient()
+
+    if not check_sufficient_balance(client):
+        return
     
     # Check and update statuses of existing open bets
     check_and_update_bet_statuses(client)
