@@ -31,7 +31,7 @@ CULTURE_TICKER_PREFIXES = [
 MIN_VOLUME = 50
 MIN_YES_PRICE = 0.15
 MAX_YES_PRICE = 0.85
-MAX_SPREAD = 1.05
+MAX_SPREAD = 1.08  # Loosened from 1.05 to capture markets with standard fee spreads
 
 # Exposure limits
 MAX_BETS_PER_TICKER = 2
