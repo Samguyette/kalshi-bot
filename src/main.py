@@ -12,12 +12,6 @@ from bet_tracker import check_and_update_bet_statuses, get_active_bets
 from utils import clean_markdown, check_sufficient_balance
 
 
-
-
-
-
-
-
 def main():
     load_dotenv()
     client = KalshiClient()
