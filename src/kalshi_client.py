@@ -3,6 +3,7 @@ import os
 import time
 import base64
 import json
+import random
 from typing import Dict, Any, Optional
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import padding
@@ -79,6 +80,39 @@ class KalshiClient:
         
         return base64.b64encode(signature).decode('utf-8')
 
+    def _request_with_retry(self, method: str, url: str, **kwargs) -> requests.Response:
+        """
+        Executes a request with exponential backoff for 429 Too Many Requests errors.
+        """
+        max_retries = 5
+        base_delay = 1.0  # Start with 1 second delay
+        
+        for attempt in range(max_retries):
+            try:
+                response = self.session.request(method, url, **kwargs)
+                
+                if response.status_code == 429:
+                    # Calculate delay with exponential backoff and jitter
+                    delay = (base_delay * (2 ** attempt)) + random.uniform(0, 1)
+                    print(f"Rate limit hit (429). Retrying in {delay:.2f}s... (Attempt {attempt + 1}/{max_retries})")
+                    time.sleep(delay)
+                    continue
+                    
+                return response
+                
+            except requests.exceptions.RequestException as e:
+                # If it's a connection error, we might want to retry as well, but for now focusing on 429
+                print(f"Request failed: {e}")
+                if attempt < max_retries - 1:
+                    delay = (base_delay * (2 ** attempt))
+                    print(f"Error encountered. Retrying in {delay:.2f}s...")
+                    time.sleep(delay)
+                else:
+                    raise e
+                    
+        # If we exhausted retries, return the last response (which is likely the 429)
+        return response
+
     def get_markets(self, min_close_ts: Optional[int] = None, max_close_ts: Optional[int] = None, limit: int = 1000, cursor: Optional[str] = None) -> Dict[str, Any]:
         """
         Fetches a single page of markets from the API.
@@ -94,7 +128,7 @@ class KalshiClient:
             params["cursor"] = cursor
             
         try:
-            response = self.session.get(url, params=params)
+            response = self._request_with_retry("GET", url, params=params)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
@@ -175,7 +209,7 @@ class KalshiClient:
 
         try:
             print(f"Placing order: {json.dumps(payload, indent=2)}")
-            response = self.session.post(url, data=body_str, headers=headers)
+            response = self._request_with_retry("POST", url, data=body_str, headers=headers)
             response.raise_for_status()
             print("Order placed successfully!")
             return response.json()
@@ -207,7 +241,7 @@ class KalshiClient:
         
         try:
             print(f"Fetching balance...")
-            response = self.session.get(url, headers=headers)
+            response = self._request_with_retry("GET", url, headers=headers)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
@@ -223,7 +257,7 @@ class KalshiClient:
         url = f"{self.BASE_URL}/markets/{ticker}"
         
         try:
-            response = self.session.get(url)
+            response = self._request_with_retry("GET", url)
             response.raise_for_status()
             data = response.json()
             return data.get("market")
@@ -238,7 +272,7 @@ class KalshiClient:
         url = f"{self.BASE_URL}/series/{series_ticker}"
         
         try:
-            response = self.session.get(url)
+            response = self._request_with_retry("GET", url)
             response.raise_for_status()
             data = response.json()
             return data.get("series")
@@ -267,7 +301,7 @@ class KalshiClient:
         }
         
         try:
-            response = self.session.get(url, headers=headers)
+            response = self._request_with_retry("GET", url, headers=headers)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
