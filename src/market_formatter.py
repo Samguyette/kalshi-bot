@@ -1,35 +1,132 @@
 """
-Market data formatting utilities.
+Market data formatting and filtering utilities.
+
+This module handles:
+- Fetching markets from Kalshi within a specific time window
+- Filtering markets based on category, pricing, and liquidity criteria
+- Formatting market data for LLM consumption
+- Enforcing position limits and token constraints
 """
 from datetime import datetime, timezone, timedelta
 from bet_tracker import get_bet_count_for_ticker
 
 
-def get_analysis_window():
-    """
-    Returns the start (Now + 24h) and end (Now + 7d) timestamps.
-    Excludes markets closing in <24h to avoid fast-moving/stale live odds.
-    """
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
+
+CULTURE_TICKER_PREFIXES = [
+    "KXRT",            # Rotten Tomatoes
+    "KXSPOTIFY",       # Spotify
+    "KXNETFLIX",       # Netflix
+    "KXMOVI",          # Movies
+    "KXBILLBOARD",     # Billboard
+    "KXRANKLISTSONG",  # Ranked Songs
+    "KXSONG",          # Songs
+    "KXALBUM",         # Albums
+    "KXTV"             # TV
+]
+
+# Filtering thresholds
+MIN_VOLUME = 50
+MIN_YES_PRICE = 0.15
+MAX_YES_PRICE = 0.85
+MAX_SPREAD = 1.05
+
+# Exposure limits
+MAX_BETS_PER_TICKER = 2
+MAX_MARKETS_FOR_LLM = 15
+
+
+# =============================================================================
+# TIME WINDOW
+# =============================================================================
+
+def get_market_time_window():
+    """Return time window for markets closing 1-14 days out (Unix timestamps)."""
     now = datetime.now(timezone.utc)
     start_time = now + timedelta(days=1)
-    end_time = now + timedelta(days=7)
+    end_time = now + timedelta(days=14)
     
     return int(start_time.timestamp()), int(end_time.timestamp())
 
 
+# =============================================================================
+# MARKET FILTERING
+# =============================================================================
+
+def _is_valid_culture_market(market):
+    """Check if market meets culture category, volume, pricing, and spread criteria."""
+    ticker = market.get("ticker", "")
+    volume = market.get("volume", 0)
+    
+    # Check ticker prefix
+    if not any(ticker.startswith(prefix) for prefix in CULTURE_TICKER_PREFIXES):
+        return False
+    
+    # Check volume
+    if volume <= MIN_VOLUME:
+        return False
+    
+    # Check pricing and spread
+    try:
+        yes_ask = float(market.get("yes_ask_dollars", 0))
+        no_ask = float(market.get("no_ask_dollars", 0))
+        
+        if not (MIN_YES_PRICE <= yes_ask <= MAX_YES_PRICE):
+            return False
+        
+        spread = yes_ask + no_ask
+        if spread > MAX_SPREAD:
+            return False
+        
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
+def filter_culture_markets(markets):
+    """Filter for culture markets with sufficient volume, reasonable pricing, and low spread."""
+    print(f"Initial market count: {len(markets)}")
+    
+    filtered = [market for market in markets if _is_valid_culture_market(market)]
+    
+    print(f"Markets after filtering: {len(filtered)}")
+    return filtered
+
+
+def filter_by_position_limits(markets):
+    """Remove markets where we've reached max exposure."""
+    print("Filtering out markets with max exposure...")
+    available_markets = []
+    
+    for market in markets:
+        ticker = market.get("ticker", "")
+        bet_count = get_bet_count_for_ticker(ticker)
+        
+        if bet_count >= MAX_BETS_PER_TICKER:
+            print(f"  Skipping {ticker}: Max exposure reached ({bet_count}/{MAX_BETS_PER_TICKER} bets)")
+        else:
+            available_markets.append(market)
+    
+    return available_markets
+
+
+# =============================================================================
+# MARKET FORMATTING
+# =============================================================================
+
 def format_market_for_prompt(market):
-    """
-    Formats a single market's data into a concise string for the LLM prompt.
-    """
+    """Format market into compact string for LLM prompt."""
     ticker = market.get("ticker", "N/A")
     title = market.get("title", "N/A")
     subtitle = market.get("subtitle") or market.get("yes_sub_title", "")
     
-    # Prices
+
     yes_price = market.get("yes_ask_dollars", "N/A")
     no_price = market.get("no_ask_dollars", "N/A")
-    if yes_price != "N/A": 
-        # Strip trailing zeros if possible for compactness, e.g. 0.2800 -> 0.28
+    
+    if yes_price != "N/A":
         try:
             yes_price = f"{float(yes_price):.2f}"
             no_price = f"{float(no_price):.2f}"
@@ -42,212 +139,88 @@ def format_market_for_prompt(market):
     except:
         pass
 
-    volume = market.get("volume", 0)
-    liquidity = market.get("liquidity", 0)
-    
-    # Skip empty pricing
+
     if yes_price == "N/A" and no_price == "N/A":
         return None
     
-    # Calculate Spread (Vig)
+
     spread_str = ""
     try:
-        y_float = float(yes_price)
-        n_float = float(no_price)
-        spread = y_float + n_float
-        # Only show if meaningful (e.g., > 1.00)
+        spread = float(yes_price) + float(no_price)
         spread_str = f" | Spread:${spread:.2f}"
     except:
         pass
-        
-    # Rules
+    
+    volume = market.get("volume", 0)
+    liquidity = market.get("liquidity", 0)
+    rules_text = _build_rules_section(market)
+    rules_str = f" | Rules: {rules_text}" if rules_text else ""
+
+    return (
+        f"{ticker} | {title} ({subtitle}) | Close:{market.get('close_time', '')} | "
+        f"Y:${yes_price} N:${no_price}{spread_str} | Last:${last_price} | "
+        f"Vol:{volume} Liq:{liquidity}{rules_str}"
+    )
+
+
+def _build_rules_section(market):
+    """Build rules section with settlement sources."""
     rules_primary = market.get("rules_primary", "")
     rules_secondary = market.get("rules_secondary", "")
     
     full_rules = rules_primary
-    
-    # Add Settlement Sources
     settlement_sources = market.get("settlement_sources", [])
     if settlement_sources:
-        # Extract names like "ESPN", "Fox Sports"
         source_names = [s.get("name", "") for s in settlement_sources if s.get("name")]
         if source_names:
             if len(source_names) == 1:
                 full_rules += f" Outcome verified from {source_names[0]}."
             else:
-                # Join with "and" for the last one
-                sources_str = " and ".join([", ".join(source_names[:-1]), source_names[-1]]) if len(source_names) > 1 else source_names[0]
+                sources_str = " and ".join([", ".join(source_names[:-1]), source_names[-1]])
                 full_rules += f" Outcome verified from {sources_str}."
     
     if rules_secondary:
         full_rules += " " + rules_secondary
-        
-    if full_rules:
-        rules_str = f" | Rules: {full_rules}"
-    else:
-        rules_str = ""
+    
+    return full_rules
 
 
-    return f"{ticker} | {title} ({subtitle}) | Close:{market.get('close_time', '')} | Y:${yes_price} N:${no_price}{spread_str} | Last:${last_price} | Vol:{volume} Liq:{liquidity}{rules_str}"
+# =============================================================================
+# MAIN PROCESSING
+# =============================================================================
 
+def fetch_filtered_markets(client, limit=50):
+    """Fetch, filter, and enrich markets for LLM analysis."""
 
-def smart_filter_markets(markets):
-    """
-    Implements 'Smart Filter' logic for market selection.
-    1. Topic Whitelist: Expanded to include KXGDP, KXRETAIL, KXEARN, KXCASE.
-       * VOLUME OVERRIDE: If volume > 5000, whitelist is ignored.
-    2. Topic Blacklist: Exclude "Temperature", "Rain", "Snow", "Weather", "TSA", "Gas Price", "Close Price", "S&P", "NASDAQ".
-    3. Confusion Zone: YES price between $0.20 and $0.80.
-    4. Liquidity & Spread: Volume > 500, Spread < $1.04.
-    5. Diversification: Max 2 markets per series.
-    """
-    print(f"Initial market count: {len(markets)}")
+    min_ts, max_ts = get_market_time_window()
+    print(f"Fetching markets closing between {min_ts} and {max_ts} (1-14 days out)...")
     
-    # WHITELIST: KXJOBLESS (Weekly Claims), KXCPI/KXPPI (Inflation data), KXCASE (Housing)
-    white_list_prefixes = [
-        "KXECON",    # General Economy
-        "KXMOVI",    # Box Office / Rotten Tomatoes (High edge for LLMs)
-        "KXPOL",     # Politics / Bills
-        "KXTECH",    # Layoffs / AI releases
-        "KXINFL",    # Inflation General
-        "KXFED",     # Fed Rates
-        "KXGDP",     # GDP Prints
-        "KXRETAIL",  # Retail Sales
-        "KXEARN",    # Corporate Earnings
-        "KXCASE",    # Case-Shiller Housing
-        "KXJOBLESS", # Jobless Claims (High volume weekly event)
-        "KXCPI",     # Consumer Price Index
-        "KXPPI"      # Producer Price Index
-    ]
-
-    # BLACKLIST: Sports (NFL, NBA, etc) and specific Weather terms
-    black_list_keywords = [
-        # Physics / Randomness (LLMs cannot predict these)
-        "Temperature", "Rain", "Snow", "Weather", "Precipitation", "Hurricane",
-        
-        # Data Feeds (Too fast / no news edge)
-        "TSA Checkpoint", "Gas Price", "Mortgage Rate",
-        
-        # Day Trading / Technical Analysis (LLMs fail here)
-        "Close Price", "S&P", "NASDAQ", "Dow Jones", "Bitcoin", "Ethereum",
-        
-        # Sports (Sucker bets for LLMs - High vig, low edge)
-        "NFL", "NBA", "NCAAF", "MLB", "NHL", "Parlay",
-
-        # Specific "Will Say" markets (Ambiguous, often arb'd against LLMs)
-        "Will Trump say"
-    ]
-    
-    # BANNED TICKERS (Strict Ban - Overrides Volume)
-    banned_ticker_prefixes = ["KXNFL", "KXNBA", "KXMLB", "KXNHL", "KXNCAAF", "KXTRUMPSAY"]
-    
-    filtered = []
-    for m in markets:
-        ticker = m.get("ticker", "")
-        title = m.get("title", "")
-        volume = m.get("volume", 0)
-        
-        # 0. STRICT BAN (Sports)
-        if any(ticker.startswith(prefix) for prefix in banned_ticker_prefixes):
-            continue
-        
-        # 1. Topic Whitelist (with Volume Override)
-        # If volume > 5000, we skip the whitelist check (catch viral events)
-        if volume <= 5000:
-            if not any(ticker.startswith(prefix) for prefix in white_list_prefixes):
-                continue
-            
-        # 2. Topic Blacklist
-        if any(keyword.lower() in title.lower() for keyword in black_list_keywords):
-            continue
-            
-        # Liquidity check (Minimum Volume > 500)
-        if volume <= 500:
-            continue
-            
-        # Price & Spread check
-        try:
-            yes_ask = float(m.get("yes_ask_dollars", 0))
-            no_ask = float(m.get("no_ask_dollars", 0))
-            
-            # 3. Confusion Zone (Loosened to $0.20 - $0.80)
-            if not (0.20 <= yes_ask <= 0.80):
-                continue
-                
-            # 4. Spread (Max $1.04)
-            spread = yes_ask + no_ask
-            if spread > 1.04:
-                continue
-                
-            filtered.append(m)
-        except (ValueError, TypeError):
-            continue
-            
-    print(f"Markets after Smart Filter (Expanded Whitelist/Vol Override, Blacklist, Zone 20-80, Vol, Spread): {len(filtered)}")
-    
-    # 5. Diversification (Max 2 per series)
-    # Sort by volume first so we keep the most active ones in each series
-    filtered.sort(key=lambda x: x.get("volume", 0), reverse=True)
-    
-    diversity_buckets = {}
-    final_list = []
-    
-    for m in filtered:
-        ticker = m.get("ticker", "")
-        # Extract series (e.g. KXETH from KXETH-25DEC31...)
-        series = ticker.split('-')[0] if '-' in ticker else ticker
-        
-        if diversity_buckets.get(series, 0) < 2:
-            final_list.append(m)
-            diversity_buckets[series] = diversity_buckets.get(series, 0) + 1
-            
-    print(f"Markets after diversity filter (max 2 per series): {len(final_list)}")
-    return final_list
-
-def fetch_and_process_markets(client, limit=50):
-    """
-    Orchestrates the fetching, filtering, and enriching of markets.
-    """
-    min_ts, max_ts = get_analysis_window()
-    print(f"Fetching markets expiring between {min_ts} and {max_ts} (1 Day to 7 Days out)...")
-    
-    # Fetch all markets using pagination
     all_markets = client.get_all_markets(min_close_ts=min_ts, max_close_ts=max_ts)
-    print(f"Found {len(all_markets)} markets potentially closing in this window.")
+    print(f"Found {len(all_markets)} markets in time window")
 
-    # Apply Smart Filter
-    active_markets = smart_filter_markets(all_markets)
-    
-    # Take top N to avoid token limits and noise
-    top_markets = active_markets[:limit]
-    
-    # Filter out markets where we already have max exposure (>= 2 bets)
-    print("Filtering out maxed-out markets...")
-    filtered_markets = []
-    for m in top_markets:
-        ticker = m.get("ticker", "")
-        # Check exposure (max 2 bets per ticker)
-        count = get_bet_count_for_ticker(ticker)
-        if count >= 2:
-            print(f"  Skipping {ticker}: Max exposure reached ({count}/2 bets).")
-        else:
-            filtered_markets.append(m)
-    top_markets = filtered_markets
-    
-    # HARD CAP: Enforce max 15 markets for the LLM prompt to ensure focus
-    if len(top_markets) > 15:
-        print(f"Capping {len(top_markets)} markets to 15 for the prompt.")
-        top_markets = top_markets[:15]
 
-    # Enrich with Series Data (Settlement Sources)
-    print("Fetching series data for top markets to get full rules...")
-    for m in top_markets:
-        ticker = m.get("ticker", "")
+    filtered_markets = filter_culture_markets(all_markets)
+    
+
+    top_markets = filtered_markets[:limit]
+    
+
+    available_markets = filter_by_position_limits(top_markets)
+    
+
+    if len(available_markets) > MAX_MARKETS_FOR_LLM:
+        print(f"Capping {len(available_markets)} markets to {MAX_MARKETS_FOR_LLM} for LLM")
+        available_markets = available_markets[:MAX_MARKETS_FOR_LLM]
+
+
+    print("Enriching markets with series-level settlement sources...")
+    for market in available_markets:
+        ticker = market.get("ticker", "")
         if "-" in ticker:
             series_ticker = ticker.split("-")[0]
             series_data = client.get_series(series_ticker)
             if series_data:
-                m["settlement_sources"] = series_data.get("settlement_sources", [])
+                market["settlement_sources"] = series_data.get("settlement_sources", [])
                 
-    return top_markets
+    return available_markets
 
