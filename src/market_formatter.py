@@ -8,7 +8,7 @@ This module handles:
 - Enforcing position limits and token constraints
 """
 from datetime import datetime, timezone, timedelta
-from bet_tracker import get_bet_count_for_ticker
+from bet_tracker import get_bet_count_for_ticker, get_bet_count_for_series_prefix
 
 
 # =============================================================================
@@ -35,6 +35,7 @@ MAX_SPREAD = 1.08  # Loosened from 1.05 to capture markets with standard fee spr
 
 # Exposure limits
 MAX_BETS_PER_TICKER = 2
+MAX_EXPOSURE_PER_SERIES = 4
 MAX_MARKETS_FOR_LLM = 15
 
 
@@ -102,12 +103,22 @@ def filter_by_position_limits(markets):
     
     for market in markets:
         ticker = market.get("ticker", "")
-        bet_count = get_bet_count_for_ticker(ticker)
         
+        # 1. Check Ticker Limit
+        bet_count = get_bet_count_for_ticker(ticker)
         if bet_count >= MAX_BETS_PER_TICKER:
             print(f"  Skipping {ticker}: Max exposure reached ({bet_count}/{MAX_BETS_PER_TICKER} bets)")
-        else:
-            available_markets.append(market)
+            continue
+
+        # 2. Check Series Limit
+        # Extract series (e.g., 'KXRTPRIMATE' from 'KXRTPRIMATE-85')
+        series_prefix = ticker.split("-")[0]
+        series_count = get_bet_count_for_series_prefix(series_prefix)
+        if series_count >= MAX_EXPOSURE_PER_SERIES:
+            print(f"  Skipping {ticker}: Max series exposure reached ({series_count}/{MAX_EXPOSURE_PER_SERIES} bets on {series_prefix})")
+            continue
+            
+        available_markets.append(market)
     
     return available_markets
 

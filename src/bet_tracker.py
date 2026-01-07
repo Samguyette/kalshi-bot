@@ -163,6 +163,26 @@ def get_bet_count_for_ticker(ticker):
         return 0
 
 
+def get_bet_count_for_series_prefix(prefix):
+    """
+    Returns the number of bets placed for a given ticker prefix (series).
+    """
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_KEY")
+    
+    if not url or not key:
+        return 0
+        
+    try:
+        supabase: Client = create_client(url, key)
+        # Use 'like' filter for prefix matching (e.g., 'KXRTPRIMATE%')
+        response = supabase.table("bets").select("id", count="exact").like("ticker", f"{prefix}%").execute()
+        return response.count
+    except Exception as e:
+        print(f"Error querying series count for {prefix}: {e}")
+        return 0
+
+
 def get_active_bets():
     """
     Returns a list of currently open (active) bets from Supabase.
