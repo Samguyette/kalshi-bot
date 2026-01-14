@@ -29,7 +29,7 @@ def main():
     active_bets = get_active_bets()
 
     # Generate and print prompt
-    PROMPT_VERSION = "v6"
+    PROMPT_VERSION = "v7"
     prompt = generate_llm_prompt(top_markets, active_bets=active_bets, prompt_version=PROMPT_VERSION)
     
     print("\n" + "="*50 + "\n")
