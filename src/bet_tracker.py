@@ -144,7 +144,7 @@ def check_and_update_bet_statuses(client):
 
 def get_bet_count_for_ticker(ticker):
     """
-    Returns the number of bets placed for a given ticker.
+    Returns the number of OPEN bets placed for a given ticker.
     """
     url = os.environ.get("SUPABASE_URL")
     key = os.environ.get("SUPABASE_KEY")
@@ -155,8 +155,8 @@ def get_bet_count_for_ticker(ticker):
         
     try:
         supabase: Client = create_client(url, key)
-        # Use simple exact match on ticker
-        response = supabase.table("bets").select("id", count="exact").eq("ticker", ticker).execute()
+        # Only count open bets for this ticker
+        response = supabase.table("bets").select("id", count="exact").eq("ticker", ticker).eq("status", "open").execute()
         return response.count
     except Exception as e:
         print(f"Error querying bet count for {ticker}: {e}")
@@ -165,7 +165,7 @@ def get_bet_count_for_ticker(ticker):
 
 def get_bet_count_for_series_prefix(prefix):
     """
-    Returns the number of bets placed for a given ticker prefix (series).
+    Returns the number of OPEN bets placed for a given ticker prefix (series).
     """
     url = os.environ.get("SUPABASE_URL")
     key = os.environ.get("SUPABASE_KEY")
@@ -175,8 +175,8 @@ def get_bet_count_for_series_prefix(prefix):
         
     try:
         supabase: Client = create_client(url, key)
-        # Use 'like' filter for prefix matching (e.g., 'KXRTPRIMATE%')
-        response = supabase.table("bets").select("id", count="exact").like("ticker", f"{prefix}%").execute()
+        # Only count open bets for this series prefix
+        response = supabase.table("bets").select("id", count="exact").like("ticker", f"{prefix}%").eq("status", "open").execute()
         return response.count
     except Exception as e:
         print(f"Error querying series count for {prefix}: {e}")
