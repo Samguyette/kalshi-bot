@@ -297,17 +297,22 @@ def fetch_filtered_markets(client, limit=50):
 
 
     filtered_markets = filter_culture_markets(all_markets)
+    print(f"After culture filtering: {len(filtered_markets)} markets")
     
 
     top_markets = filtered_markets[:limit]
+    print(f"After limiting to top {limit}: {len(top_markets)} markets")
     
 
     available_markets = filter_by_position_limits(top_markets)
+    print(f"After position limit filtering: {len(available_markets)} markets")
     
 
     if len(available_markets) > MAX_MARKETS_FOR_LLM:
         print(f"Capping {len(available_markets)} markets to {MAX_MARKETS_FOR_LLM} for LLM")
         available_markets = available_markets[:MAX_MARKETS_FOR_LLM]
+    
+    print(f"Final markets to send to LLM: {len(available_markets)}")
 
 
     print("Enriching markets with series-level settlement sources...")
