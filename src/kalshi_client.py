@@ -113,7 +113,7 @@ class KalshiClient:
         # If we exhausted retries, return the last response (which is likely the 429)
         return response
 
-    def get_markets(self, min_close_ts: Optional[int] = None, max_close_ts: Optional[int] = None, limit: int = 1000, cursor: Optional[str] = None) -> Dict[str, Any]:
+    def get_markets(self, min_close_ts: Optional[int] = None, max_close_ts: Optional[int] = None, limit: int = 1000, cursor: Optional[str] = None, series_ticker: Optional[str] = None) -> Dict[str, Any]:
         """
         Fetches a single page of markets from the API.
         """
@@ -126,6 +126,8 @@ class KalshiClient:
             params["max_close_ts"] = max_close_ts
         if cursor:
             params["cursor"] = cursor
+        if series_ticker:
+            params["series_ticker"] = series_ticker
             
         try:
             response = self._request_with_retry("GET", url, params=params)
@@ -135,16 +137,20 @@ class KalshiClient:
             print(f"Error fetching markets: {e}")
             return {"markets": []}
 
-    def get_all_markets(self, min_close_ts: Optional[int] = None, max_close_ts: Optional[int] = None) -> list:
+    def get_all_markets(self, min_close_ts: Optional[int] = None, max_close_ts: Optional[int] = None, series_ticker: Optional[str] = None) -> list:
         """
         Fetches ALL markets by paginating through results.
+        If series_ticker is provided, fetches only markets for that series.
         """
         all_markets = []
         cursor = None
         
+        # print(f"DEBUG: Starting market fetch. Min: {min_close_ts}, Max: {max_close_ts}, Series: {series_ticker}")
+        
         while True:
-            data = self.get_markets(min_close_ts, max_close_ts, limit=1000, cursor=cursor)
+            data = self.get_markets(min_close_ts, max_close_ts, limit=1000, cursor=cursor, series_ticker=series_ticker)
             markets = data.get("markets", [])
+            
             if not markets:
                 break
                 
@@ -158,6 +164,46 @@ class KalshiClient:
             time.sleep(0.2)
                 
         return all_markets
+
+    def get_public_series(self, limit: int = 1000, cursor: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Fetches a page of series.
+        """
+        url = f"{self.BASE_URL}/series"
+        params = {"limit": limit}
+        if cursor:
+            params["cursor"] = cursor
+            
+        try:
+            response = self._request_with_retry("GET", url, params=params)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching series list: {e}")
+            return {"series": []}
+
+    def get_all_series(self) -> list:
+        """
+        Fetches ALL series by pagination.
+        """
+        all_series = []
+        cursor = None
+        
+        while True:
+            data = self.get_public_series(limit=1000, cursor=cursor)
+            series_list = data.get("series", [])
+            
+            if not series_list:
+                break
+                
+            all_series.extend(series_list)
+            cursor = data.get("cursor")
+            
+            if not cursor:
+                break
+            time.sleep(0.2)
+            
+        return all_series
 
     def place_order(self, ticker: str, side: str, count: int, price: float, dry_run: bool = False) -> Optional[Dict[str, Any]]:
         """

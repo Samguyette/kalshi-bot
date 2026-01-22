@@ -33,7 +33,7 @@ def generate_llm_prompt(markets, active_bets, prompt_version):
             market_sections.append(formatted)
             
     if not market_sections:
-        return "No active markets found closing today with valid pricing."
+        return None
 
     markets_text = "\n".join(market_sections)
     
@@ -96,7 +96,8 @@ def call_google_llm(prompt, dry_run=False):
             response = client.models.generate_content(
                 model=model_name,
                 config=types.GenerateContentConfig(
-                    tools=[types.Tool(google_search=types.GoogleSearch())]
+                    tools=[types.Tool(google_search=types.GoogleSearch())],
+                    response_mime_type="application/json"
                 ),
                 contents=[prompt]
             )

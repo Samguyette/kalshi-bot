@@ -32,6 +32,10 @@ def main():
     PROMPT_VERSION = "v7"
     prompt = generate_llm_prompt(top_markets, active_bets=active_bets, prompt_version=PROMPT_VERSION)
     
+    if prompt is None:
+        print("No active markets found matching criteria. Stopping analysis.")
+        return
+    
     print("\n" + "="*50 + "\n")
     print("Generated Prompt (feeding to LLM...):")
     print(prompt)

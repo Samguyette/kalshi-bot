@@ -87,11 +87,60 @@ def _is_valid_culture_market(market):
 
 
 def filter_culture_markets(markets):
-    """Filter for culture markets with sufficient volume, reasonable pricing, and low spread."""
-    print(f"Initial market count: {len(markets)}")
+    """Filter for culture markets with sufficient volume, reasonable pricing, and low spread.
     
-    filtered = [market for market in markets if _is_valid_culture_market(market)]
+    Note: Ticker prefix filtering happens UPSTREAM now (via series selection), 
+    but we keep a safety check here just in case.
+    """
+    print(f"Initial market count for filtering: {len(markets)}")
     
+    filtered = []
+    
+    # Debug counters
+    dropped_prefix = 0
+    dropped_volume = 0
+    dropped_price = 0
+    dropped_spread = 0
+    dropped_error = 0
+    
+    for market in markets:
+        ticker = market.get("ticker", "")
+        volume = market.get("volume", 0)
+        
+        # Check ticker prefix (Safety Check)
+        if not any(ticker.startswith(prefix) for prefix in CULTURE_TICKER_PREFIXES):
+            dropped_prefix += 1
+            continue
+        
+        # Check volume
+        if volume <= MIN_VOLUME:
+            dropped_volume += 1
+            continue
+        
+        # Check pricing and spread
+        try:
+            yes_ask = float(market.get("yes_ask_dollars", 0))
+            no_ask = float(market.get("no_ask_dollars", 0))
+            
+            if not (MIN_YES_PRICE <= yes_ask <= MAX_YES_PRICE):
+                dropped_price += 1
+                continue
+            
+            spread = yes_ask + no_ask
+            if spread > MAX_SPREAD:
+                dropped_spread += 1
+                continue
+            
+            filtered.append(market)
+        except (ValueError, TypeError):
+            dropped_error += 1
+            continue
+
+    print(f"Markets dropped by Prefix: {dropped_prefix}")
+    print(f"Markets dropped by Volume: {dropped_volume}")
+    print(f"Markets dropped by Price: {dropped_price}")
+    print(f"Markets dropped by Spread: {dropped_spread}")
+    print(f"Markets dropped by Error: {dropped_error}")
     print(f"Markets after filtering: {len(filtered)}")
     return filtered
 
@@ -201,13 +250,49 @@ def _build_rules_section(market):
 # =============================================================================
 
 def fetch_filtered_markets(client, limit=50):
-    """Fetch, filter, and enrich markets for LLM analysis."""
+    """Fetch, filter, and enrich markets for LLM analysis.
+    
+    OPTIMIZATION: Defines a list of relevant series first, then fetches markets only for those series.
+    This avoids downloading the entire market universe.
+    """
 
     min_ts, max_ts = get_market_time_window()
-    print(f"Fetching markets closing between {min_ts} and {max_ts} (1-14 days out)...")
+    print(f"Fetching active series locally to filter for '{CULTURE_TICKER_PREFIXES}'...")
     
-    all_markets = client.get_all_markets(min_close_ts=min_ts, max_close_ts=max_ts)
-    print(f"Found {len(all_markets)} markets in time window")
+    # 1. Fetch all series (much lighter than all markets)
+    all_series = client.get_all_series()
+    print(f"Found {len(all_series)} total series.")
+    
+    if not all_series:
+        print("WARNING: Failed to fetch any series from API. Cannot proceed.")
+        return []
+    
+    # 2. Filter Series by Prefix
+    target_series_tickers = []
+    for s in all_series:
+        ticker = s.get("ticker", "")
+        if any(ticker.startswith(prefix) for prefix in CULTURE_TICKER_PREFIXES):
+            target_series_tickers.append(ticker)
+            
+    print(f"Identified {len(target_series_tickers)} relevant Culture series.")
+    
+    # 3. Fetch Markets for each Target Series
+    all_markets = []
+    print(f"Fetching markets for {len(target_series_tickers)} series (Time Window: {min_ts} - {max_ts})...")
+    
+    for series_ticker in target_series_tickers:
+        series_markets = client.get_all_markets(
+            min_close_ts=min_ts, 
+            max_close_ts=max_ts, 
+            series_ticker=series_ticker
+        )
+        if series_markets:
+            all_markets.extend(series_markets)
+        
+        # Rate limit protection: Sleep slightly between series fetches
+        time.sleep(0.2)
+            
+    print(f"Total raw markets found across all target series: {len(all_markets)}")
 
 
     filtered_markets = filter_culture_markets(all_markets)
@@ -229,9 +314,17 @@ def fetch_filtered_markets(client, limit=50):
         ticker = market.get("ticker", "")
         if "-" in ticker:
             series_ticker = ticker.split("-")[0]
-            series_data = client.get_series(series_ticker)
-            if series_data:
-                market["settlement_sources"] = series_data.get("settlement_sources", [])
+            # Optimization: Use the local series list instead of API call
+            matching_series = next((s for s in all_series if s.get("ticker") == series_ticker), None)
+            
+            if matching_series:
+                market["settlement_sources"] = matching_series.get("settlement_sources", [])
+            else:
+                # Fallback to API if not found (unlikely)
+                print(f"WARNING: Series {series_ticker} not found in local cache, fetching from API...")
+                series_data = client.get_series(series_ticker)
+                if series_data:
+                    market["settlement_sources"] = series_data.get("settlement_sources", [])
                 
     return available_markets
 
