@@ -161,8 +161,19 @@ def filter_by_position_limits(markets):
             continue
 
         # 2. Check Series Limit
-        # Extract series (e.g., 'KXRTPRIMATE' from 'KXRTPRIMATE-85')
-        series_prefix = ticker.split("-")[0]
+        # Extract series prefix more intelligently:
+        # - For markets like "KXRTRETURNTOSILENTHILL-30", use "KXRTRETURNTOSILENTHILL"
+        # - For markets like "KXRT-SHE-75", use "KXRT-SHE" (not just "KXRT")
+        # This prevents blocking all RT markets when we only have positions on one movie
+        parts = ticker.split("-")
+        if len(parts) >= 2 and len(parts[1]) <= 5 and not parts[1].isdigit():
+            # If second part is short and not a number, it's likely a movie code
+            # e.g., "KXRT-SHE-75" -> use "KXRT-SHE"
+            series_prefix = f"{parts[0]}-{parts[1]}"
+        else:
+            # Otherwise use first part: "KXRTRETURNTOSILENTHILL-30" -> "KXRTRETURNTOSILENTHILL"
+            series_prefix = parts[0]
+        
         series_count = get_bet_count_for_series_prefix(series_prefix)
         if series_count >= MAX_EXPOSURE_PER_SERIES:
             print(f"  Skipping {ticker}: Max series exposure reached ({series_count}/{MAX_EXPOSURE_PER_SERIES} bets on {series_prefix})")
