@@ -7,6 +7,7 @@ This module handles:
 - Formatting market data for LLM consumption
 - Enforcing position limits and token constraints
 """
+import time
 from datetime import datetime, timezone, timedelta
 from bet_tracker import get_bet_count_for_ticker, get_bet_count_for_series_prefix
 
